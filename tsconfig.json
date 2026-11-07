@@ -17,8 +17,10 @@
     // and npm install -D @types/node
     // Other Outputs
     "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
+    //declaration，用于生成类型定义文件，用于在其他项目中使用当前项目中的类型
+    "declaration": false,
+    //declarationMap，用于生成类型定义文件的映射文件，用于在其他项目中使用当前项目中的类型
+    "declarationMap": false,
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -37,5 +39,6 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-  }
+  },
+  "include": ["src"]
 }
