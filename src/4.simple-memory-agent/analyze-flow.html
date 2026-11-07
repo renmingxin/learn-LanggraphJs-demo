@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>analyze-agent 流程图解 · 分析 → 并行抓取 → 汇总</title>
+<style>
+  :root {
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --blue: #2563eb;
+    --green: #059669;
+    --red: #dc2626;
+    --amber: #d97706;
+    --violet: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  header { margin-bottom: 26px; }
+  h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: .3px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0; }
+  section {
+    background: var(--card);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 22px 26px 26px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  h2 { font-size: 17px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  h2 .idx {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 7px;
+    background: var(--blue); color: #fff;
+    font-size: 12px; font-weight: 600; flex: none;
+  }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 18px 34px; }
+
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .state { border: 1px solid #e2e8f0; border-radius: 10px; padding: 13px 15px; background: #f8fafc; }
+  .state .key { font-family: Consolas, monospace; font-size: 14px; font-weight: 700; color: var(--blue); }
+  .state .type { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .state .desc { font-size: 12px; color: #334155; margin-top: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #eef2f7; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; background: #f8fafc; }
+
+  .lanes { display: flex; flex-direction: column; gap: 10px; }
+  .lane {
+    display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center;
+  }
+  .lane .name { font-size: 12px; font-weight: 600; color: #334155; }
+  .track { display: flex; gap: 5px; }
+  .seg {
+    height: 30px; border-radius: 6px; display: flex; align-items: center;
+    padding: 0 9px; font-size: 11.5px; color: #fff; white-space: nowrap;
+  }
+  .seg.ok { background: #10b981; }
+  .seg.fail { background: #ef4444; }
+  .seg small { opacity: .9; }
+
+  .logs {
+    background: #0f172a; color: #cbd5e1; border-radius: 10px; padding: 16px 18px;
+    font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.9; overflow-x: auto;
+  }
+  .logs .ok { color: #6ee7b7; }
+  .logs .warn { color: #fca5a5; }
+  .logs .dim { color: #94a3b8; }
+
+  .pitfalls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .pit { border-radius: 10px; padding: 13px 15px; font-size: 13px; background: #fef2f2; border: 1px solid #fecaca; }
+  .pit .t { font-weight: 700; color: var(--red); margin-bottom: 6px; }
+  .pit p { margin: 0; color: #334155; }
+  .improve { border-radius: 10px; padding: 13px 15px; font-size: 13px; background: #ecfdf5; border: 1px solid #a7f3d0; margin-bottom: 10px; }
+  .improve b { color: var(--green); }
+
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; }
+  svg { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>analyze-agent：分析 → 并行抓取 → 汇总</h1>
+    <p class="sub">一个主题进去，先让模型挑 5 个国内可借鉴站点，再并发抓取正文，最后产出一份调研报告</p>
+  </header>
+
+  <!-- 1 -->
+  <section>
+    <h2><span class="idx">1</span>状态里有什么</h2>
+    <p class="hint">四个字段对应流程的四个阶段，每个节点只负责写其中一部分。</p>
+    <div class="state-grid">
+      <div class="state">
+        <div class="key">topic</div><span class="type">string · 输入</span>
+        <div class="desc">用户给的主题，如「AI 笔记应用的功能设计」</div>
+      </div>
+      <div class="state">
+        <div class="key">sites</div><span class="type">array · 分析产物</span>
+        <div class="desc">analyzeNode 输出 5 个 <code>{ name, url }</code></div>
+      </div>
+      <div class="state">
+        <div class="key">pages</div><span class="type">array · 抓取产物</span>
+        <div class="desc">每个站点一条结果，含 ok、字符数、正文</div>
+      </div>
+      <div class="state">
+        <div class="key">report</div><span class="type">string · 输出</span>
+        <div class="desc">modelNode 生成的最终报告</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2><span class="idx">2</span>主流程图</h2>
+    <p class="hint">中间那个虚线框是重点：一个节点内部用 <code>Promise.all</code> 同时跑 5 个抓取任务，每个任务自己带重试循环。</p>
+
+    <svg viewBox="0 0 960 560" role="img" aria-label="analyze-agent 流程图">
+      <defs>
+        <marker id="a-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb" />
+        </marker>
+        <marker id="a-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed" />
+        </marker>
+      </defs>
+
+      <!-- start -->
+      <rect x="380" y="16" width="200" height="44" rx="22" fill="#e2e8f0" stroke="#cbd5e1" />
+      <text x="480" y="43" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">__start__</text>
+      <line x1="480" y1="60" x2="480" y2="88" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- analyze -->
+      <rect x="300" y="90" width="360" height="68" rx="10" fill="#ede9fe" stroke="#c4b5fd" />
+      <text x="480" y="115" text-anchor="middle" font-size="14" font-weight="700" fill="#4c1d95">analyzeNode</text>
+      <text x="480" y="135" text-anchor="middle" font-size="11" fill="#6d28d9">模型输出 JSON → 解析出 5 个站点</text>
+      <text x="480" y="151" text-anchor="middle" font-size="11" fill="#8b5cf6">写入 sites</text>
+
+      <line x1="480" y1="158" x2="480" y2="196" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- fetch container -->
+      <rect x="140" y="198" width="680" height="140" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="7 5" />
+      <text x="160" y="222" font-size="13" font-weight="700" fill="#334155">fetchNode</text>
+      <text x="238" y="222" font-size="11" fill="#64748b">Promise.all 并行抓 5 个站点，每个站点最多重试 3 次</text>
+
+      <!-- 5 tasks -->
+      <g font-size="11">
+        <rect x="172" y="240" width="112" height="58" rx="8" fill="#dbeafe" stroke="#93c5fd" />
+        <text x="228" y="262" text-anchor="middle" font-weight="700" fill="#1e40af">印象笔记</text>
+        <text x="228" y="280" text-anchor="middle" fill="#1e40af">尝试 1/3</text>
+        <text x="228" y="292" text-anchor="middle" fill="#3b82f6">↻ 循环</text>
+
+        <rect x="296" y="240" width="112" height="58" rx="8" fill="#dbeafe" stroke="#93c5fd" />
+        <text x="352" y="262" text-anchor="middle" font-weight="700" fill="#1e40af">有道云</text>
+        <text x="352" y="280" text-anchor="middle" fill="#1e40af">尝试 1/3</text>
+        <text x="352" y="292" text-anchor="middle" fill="#3b82f6">↻ 循环</text>
+
+        <rect x="420" y="240" width="112" height="58" rx="8" fill="#fee2e2" stroke="#fecaca" />
+        <text x="476" y="262" text-anchor="middle" font-weight="700" fill="#991b1b">语雀</text>
+        <text x="476" y="280" text-anchor="middle" fill="#991b1b">尝试 3/3</text>
+        <text x="476" y="292" text-anchor="middle" fill="#dc2626">SPA · 失败</text>
+
+        <rect x="544" y="240" width="112" height="58" rx="8" fill="#fee2e2" stroke="#fecaca" />
+        <text x="600" y="262" text-anchor="middle" font-weight="700" fill="#991b1b">飞书</text>
+        <text x="600" y="280" text-anchor="middle" fill="#991b1b">尝试 3/3</text>
+        <text x="600" y="292" text-anchor="middle" fill="#dc2626">SPA · 失败</text>
+
+        <rect x="668" y="240" width="112" height="58" rx="8" fill="#fee2e2" stroke="#fecaca" />
+        <text x="724" y="262" text-anchor="middle" font-weight="700" fill="#991b1b">wolai</text>
+        <text x="724" y="280" text-anchor="middle" fill="#991b1b">尝试 3/3</text>
+        <text x="724" y="292" text-anchor="middle" fill="#dc2626">SPA · 失败</text>
+      </g>
+
+      <text x="172" y="320" font-size="11" fill="#64748b">五个任务同时开始，谁先返回就先落库，互不等待。失败的站点会记录 ok=false，而不是中断整张图。</text>
+
+      <line x1="480" y1="338" x2="480" y2="372" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- model -->
+      <rect x="300" y="374" width="360" height="68" rx="10" fill="#d1fae5" stroke="#6ee7b7" />
+      <text x="480" y="399" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">modelNode</text>
+      <text x="480" y="419" text-anchor="middle" font-size="11" fill="#047857">只用抓取成功的页面拼成语料</text>
+      <text x="480" y="435" text-anchor="middle" font-size="11" fill="#059669">写入 report</text>
+
+      <line x1="480" y1="442" x2="480" y2="478" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- end -->
+      <rect x="380" y="480" width="200" height="44" rx="22" fill="#e2e8f0" stroke="#cbd5e1" />
+      <text x="480" y="507" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">__end__</text>
+
+      <text x="30" y="548" font-size="12" fill="#94a3b8">三个节点串行，唯一的并行发生在 fetchNode 内部。</text>
+    </svg>
+
+    <div class="legend">
+      <span><i class="dot" style="background:#ede9fe;border:1px solid #c4b5fd"></i>分析</span>
+      <span><i class="dot" style="background:#dbeafe;border:1px solid #93c5fd"></i>抓取成功</span>
+      <span><i class="dot" style="background:#fee2e2;border:1px solid #fecaca"></i>抓取失败</span>
+      <span><i class="dot" style="background:#d1fae5;border:1px solid #6ee7b7"></i>汇总</span>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2><span class="idx">3</span>一次真实运行的时间线</h2>
+    <p class="hint">五个任务并发，两站一次成功，三站三次都只拿到空壳。这正是运行时你可以预期看到的形态。</p>
+    <div class="lanes">
+      <div class="lane">
+        <div class="name">印象笔记</div>
+        <div class="track"><div class="seg ok">第 1 次成功 · 1500 字符</div></div>
+      </div>
+      <div class="lane">
+        <div class="name">有道云笔记</div>
+        <div class="track"><div class="seg ok">第 1 次成功 · 1463 字符</div></div>
+      </div>
+      <div class="lane">
+        <div class="name">语雀</div>
+        <div class="track">
+          <div class="seg fail">失败 · 26 字符</div>
+          <div class="seg fail">失败 · 26 字符</div>
+          <div class="seg fail">失败 · 26 字符</div>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="name">飞书</div>
+        <div class="track">
+          <div class="seg fail">失败 · 22 字符</div>
+          <div class="seg fail">失败 · 22 字符</div>
+          <div class="seg fail">失败 · 22 字符</div>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="name">wolai</div>
+        <div class="track">
+          <div class="seg fail">失败 · 50 字符</div>
+          <div class="seg fail">失败 · 50 字符</div>
+          <div class="seg fail">失败 · 50 字符</div>
+        </div>
+      </div>
+    </div>
+    <p class="hint" style="margin:14px 0 0 0;color:#64748b;">
+      注意三站的三次结果完全一样 —— 说明"内容过短"不是瞬时故障，重试同一 URL 不会变好。
+    </p>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2><span class="idx">4</span>代码与图的对应关系</h2>
+    <table>
+      <thead><tr><th>图上的元素</th><th>代码</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>analyzeNode</td><td><code>analyzeNode()</code></td><td>提示词要求只输出 JSON 数组，用正则 <code>/\[[\s\S]*\]/</code> 取出后解析</td></tr>
+        <tr><td>5 个并行任务</td><td><code>Promise.all(state.sites.map(fetchOne))</code></td><td>并发发起，等待全部结束才返回</td></tr>
+        <tr><td>每个任务的重试环</td><td><code>fetchOne()</code> 里的 <code>for (attempt = 1..3)</code></td><td>成功即返回；失败则退避 500/1000ms 再试；最后一次失败记为 ok=false</td></tr>
+        <tr><td>抓取工具</td><td><code>fetchTool</code></td><td><code>tool()</code> 包装：fetch → 非 2xx 抛错 → 返回 HTML</td></tr>
+        <tr><td>正文清洗</td><td><code>cleanHtml()</code></td><td>去 script/style/标签，压空白，截断 1500 字符</td></tr>
+        <tr><td>modelNode</td><td><code>modelNode()</code></td><td>过滤 ok=true 的页面，拼成语料后调模型</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <h2><span class="idx">5</span>运行日志怎么读</h2>
+    <div class="logs">
+      <div><span class="dim">[analyze]</span> 印象笔记 | 有道云笔记 | 语雀 | 飞书 | wolai</div>
+      <div><span class="warn">[fetch]</span> 飞书 第 1/3 次失败：内容过短(22 字符)</div>
+      <div><span class="dim">[fetch]</span> 有道云笔记 第 1 次成功，1463 字符</div>
+      <div><span class="warn">[fetch]</span> wolai 第 1/3 次失败：内容过短(50 字符)</div>
+      <div><span class="dim">[fetch]</span> 印象笔记 第 1 次成功，1500 字符</div>
+      <div><span class="warn">[fetch]</span> 语雀 第 1/3 次失败：内容过短(26 字符)</div>
+      <div><span class="dim">……（失败站点继续重试到第 3 次）</span></div>
+      <div><span class="ok">[fetch]</span> 并行完成，成功 2/5</div>
+      <div><span class="dim">[model]</span> 汇总完成</div>
+    </div>
+    <p class="hint" style="margin-top:14px;margin-bottom:0;">
+      日志顺序交错 = 并行生效；同一站点连续出现三次 = 重试循环生效。
+    </p>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <h2><span class="idx">6</span>三个容易踩的点</h2>
+    <div class="pitfalls">
+      <div class="pit">
+        <div class="t">1. 对"内容过短"重试是无效的</div>
+        <p>SPA 站点返回的 HTML 永远是那 20 多个字符的空壳，重试三次结果完全一样，只多花了两轮等待。重试应只针对网络错误、超时、5xx。</p>
+      </div>
+      <div class="pit">
+        <div class="t">2. 模型返回的不是纯 JSON</div>
+        <p>经常被 <code>```json</code> 包裹，或前后带解释。代码用正则先抓数组再 <code>JSON.parse</code>，解析失败会直接抛错，而不是让后面的节点拿到空数组。</p>
+      </div>
+      <div class="pit">
+        <div class="t">3. 正文截断长度要克制</div>
+        <p>5 个站点 × 1500 字符 ≈ 7.5k 字符进提示词。截到 3000 以上很容易撞上下文上限，也会让汇总变慢、变贵。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <h2><span class="idx">7</span>想让抓取更靠谱，三个方向</h2>
+    <div class="improve">
+      <b>方向一：只对真故障重试</b> —— 把 <code>Throw new Error('内容过短')</code> 标记为不可重试，直接返回 ok=false；只对 <code>HTTP 5xx / 超时 / 网络错误</code> 走退避重试。
+    </div>
+    <div class="improve">
+      <b>方向二：换抓取通道</b> —— 用带渲染的阅读器服务（例如 Jina Reader 这类把页面转成纯文本的接口），SPA 也能拿到正文；代价是多一个外部依赖。
+    </div>
+    <div class="improve">
+      <b>方向三：让模型给可抓取的 URL</b> —— analyzeNode 的提示词里明确要求"给出静态可访问的介绍页/帮助文档页"，而不是营销首页；命中率会明显提升。
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>entrypoint-demo 逻辑图</title>
+<style>
+  :root {
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --blue: #2563eb;
+    --green: #059669;
+    --red: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: .3px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0; }
+  section {
+    background: var(--card);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 22px 26px 26px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  h2 {
+    font-size: 17px;
+    margin: 0 0 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .idx {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 7px;
+    background: var(--blue); color: #fff;
+    font-size: 12px; font-weight: 600; flex: none;
+  }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 18px 34px; }
+
+  .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .role { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; background: #f8fafc; }
+  .role .file { font-size: 13px; font-weight: 700; color: var(--blue); font-family: Consolas, monospace; }
+  .role .name { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .role .desc { font-size: 13px; margin-top: 8px; color: #334155; }
+  .role .tag {
+    display: inline-block; margin-top: 8px; font-size: 11px;
+    padding: 1px 7px; border-radius: 999px; background: #e0e7ff; color: #3730a3;
+  }
+
+  .timeline { display: flex; flex-direction: column; }
+  .round { display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; }
+  .round + .round { border-top: 1px dashed #e2e8f0; }
+  .round-label { flex: none; width: 76px; font-size: 12px; color: var(--muted); padding-top: 6px; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip {
+    font-size: 12px; padding: 5px 10px; border-radius: 8px;
+    border: 1px solid transparent; font-family: Consolas, "Microsoft YaHei", monospace;
+  }
+  .chip.human { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+  .chip.ai    { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
+  .chip.tool  { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+  .chip.final { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .arrow-sm { color: #94a3b8; font-size: 13px; }
+  .note { font-size: 12px; color: var(--muted); width: 100%; margin-top: 2px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .box { border-radius: 10px; padding: 14px 16px; font-size: 13px; }
+  .box.bad { background: #fef2f2; border: 1px solid #fecaca; }
+  .box.good { background: #ecfdf5; border: 1px solid #a7f3d0; }
+  .box .title { font-weight: 700; margin-bottom: 8px; }
+  .box.bad .title { color: var(--red); }
+  .box.good .title { color: var(--green); }
+  .box ul { margin: 0; padding-left: 18px; }
+  .box li { margin-bottom: 4px; color: #334155; }
+
+  code {
+    background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 12px;
+  }
+  svg { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>entrypoint-demo 逻辑图</h1>
+    <p class="sub">从 <code>agent.invoke()</code> 到最终答案：五个文件如何串成一条 ReAct 循环</p>
+  </header>
+
+  <!-- 1 -->
+  <section>
+    <h2><span class="idx">1</span>五个文件各自的职责</h2>
+    <p class="hint">每个文件只做一件事：定义工具 → 创建模型 → 调模型 → 调工具 → 编排循环。</p>
+    <div class="roles">
+      <div class="role">
+        <div class="file">1.tools.ts</div>
+        <div class="name">定义工具</div>
+        <div class="desc">函数 + zod schema，导出 <code>toolsByName</code> 与 <code>tools</code></div>
+        <div class="tag">静态数据</div>
+      </div>
+      <div class="role">
+        <div class="file">2.modal.ts</div>
+        <div class="name">创建模型</div>
+        <div class="desc"><code>ChatOpenAI</code> + <code>bindTools</code>，产出带工具清单的实例</div>
+        <div class="tag">单例</div>
+      </div>
+      <div class="role">
+        <div class="file">3.modal-node.ts</div>
+        <div class="name">调模型节点</div>
+        <div class="desc"><code>task('callLLM')</code>：拼 SystemMessage，返回 AIMessage</div>
+        <div class="tag">副作用 · 网络</div>
+      </div>
+      <div class="role">
+        <div class="file">4.tool-node.ts</div>
+        <div class="name">调工具节点</div>
+        <div class="desc"><code>task('callTool')</code>：按名字查表执行，返回 ToolMessage</div>
+        <div class="tag">副作用 · 执行</div>
+      </div>
+      <div class="role">
+        <div class="file">5.agent.ts</div>
+        <div class="name">编排循环</div>
+        <div class="desc"><code>entrypoint</code> + <code>while</code>：决定何时调工具、何时收尾</div>
+        <div class="tag">控制流</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2><span class="idx">2</span>主循环流程图</h2>
+    <p class="hint">蓝紫是模型侧，绿色是工具侧，橙色是判断点。左侧那条回到顶部的路径就是 Agent 的"思考—行动"循环。</p>
+
+    <svg viewBox="0 0 980 700" role="img" aria-label="Agent 循环流程图">
+      <defs>
+        <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb" />
+        </marker>
+        <marker id="arw-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#059669" />
+        </marker>
+        <marker id="arw-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#64748b" />
+        </marker>
+      </defs>
+
+      <!-- index.ts -->
+      <rect x="330" y="25" width="320" height="58" rx="10" fill="#dbeafe" stroke="#93c5fd" />
+      <text x="490" y="49" text-anchor="middle" font-size="14" font-weight="700" fill="#1e3a8a">index.ts</text>
+      <text x="490" y="68" text-anchor="middle" font-size="11" fill="#1e40af">agent.invoke([HumanMessage])</text>
+
+      <!-- callLLM -->
+      <rect x="330" y="120" width="320" height="58" rx="10" fill="#e0e7ff" stroke="#a5b4fc" />
+      <text x="490" y="144" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">callLLM(messages) → AIMessage</text>
+      <text x="490" y="163" text-anchor="middle" font-size="11" fill="#4338ca">3.modal-node.ts · 2.modal.ts</text>
+
+      <!-- 菱形 -->
+      <polygon points="490,200 650,255 490,310 330,255" fill="#fff7ed" stroke="#fdba74" />
+      <text x="490" y="251" text-anchor="middle" font-size="13" font-weight="700" fill="#9a3412">tool_calls 非空？</text>
+      <text x="490" y="270" text-anchor="middle" font-size="11" fill="#c2410c">只看长度</text>
+
+      <!-- 否 -->
+      <rect x="730" y="224" width="210" height="62" rx="10" fill="#dcfce7" stroke="#86efac" />
+      <text x="835" y="250" text-anchor="middle" font-size="14" font-weight="700" fill="#166534">break</text>
+      <text x="835" y="269" text-anchor="middle" font-size="11" fill="#15803d">return 最终 AIMessage</text>
+
+      <!-- callTool -->
+      <rect x="330" y="360" width="320" height="58" rx="10" fill="#d1fae5" stroke="#6ee7b7" />
+      <text x="490" y="384" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">callTool(toolCall) × N 并行</text>
+      <text x="490" y="403" text-anchor="middle" font-size="11" fill="#047857">4.tool-node.ts · Promise.all</text>
+
+      <!-- ToolMessage -->
+      <rect x="330" y="455" width="320" height="58" rx="10" fill="#ecfdf5" stroke="#a7f3d0" />
+      <text x="490" y="479" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">ToolMessage（带 tool_call_id）</text>
+      <text x="490" y="498" text-anchor="middle" font-size="11" fill="#047857">工具只负责"算结果"</text>
+
+      <!-- addMessages -->
+      <rect x="330" y="550" width="320" height="58" rx="10" fill="#f1f5f9" stroke="#cbd5e1" />
+      <text x="490" y="574" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">addMessages(messages, [AIMessage, ...])</text>
+      <text x="490" y="593" text-anchor="middle" font-size="11" fill="#64748b">把调用意图和执行结果都写回历史</text>
+
+      <!-- 箭头 -->
+      <line x1="490" y1="83" x2="490" y2="115" stroke="#2563eb" stroke-width="2" marker-end="url(#arw)" />
+      <line x1="490" y1="178" x2="490" y2="196" stroke="#2563eb" stroke-width="2" marker-end="url(#arw)" />
+      <line x1="650" y1="255" x2="725" y2="255" stroke="#059669" stroke-width="2" marker-end="url(#arw-g)" />
+      <text x="688" y="245" text-anchor="middle" font-size="12" font-weight="600" fill="#059669">否</text>
+      <line x1="490" y1="310" x2="490" y2="355" stroke="#059669" stroke-width="2" marker-end="url(#arw-g)" />
+      <text x="503" y="338" font-size="12" font-weight="600" fill="#059669">是</text>
+      <line x1="490" y1="418" x2="490" y2="450" stroke="#2563eb" stroke-width="2" marker-end="url(#arw)" />
+      <line x1="490" y1="513" x2="490" y2="545" stroke="#2563eb" stroke-width="2" marker-end="url(#arw)" />
+
+      <!-- 回路 -->
+      <path d="M330,579 L250,579 L250,148 L322,148" fill="none" stroke="#64748b" stroke-width="2"
+            stroke-dasharray="7 5" marker-end="url(#arw-gray)" />
+      <text x="240" y="363" text-anchor="middle" font-size="12" fill="#475569"
+            transform="rotate(-90 240 363)">带着新上下文再问一次</text>
+
+      <text x="30" y="680" font-size="12" fill="#94a3b8">循环的终止条件只有一条：tool_calls 为空。</text>
+    </svg>
+
+    <div class="legend">
+      <span><i class="dot" style="background:#dbeafe;border:1px solid #93c5fd"></i>入口</span>
+      <span><i class="dot" style="background:#e0e7ff;border:1px solid #a5b4fc"></i>模型调用</span>
+      <span><i class="dot" style="background:#d1fae5;border:1px solid #6ee7b7"></i>工具执行</span>
+      <span><i class="dot" style="background:#f1f5f9;border:1px solid #cbd5e1"></i>消息拼装</span>
+      <span><i class="dot" style="background:#dcfce7;border:1px solid #86efac"></i>退出</span>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2><span class="idx">3</span>messages 数组是怎么长出来的</h2>
+    <p class="hint">每一轮都在原有历史后面追加消息，模型看到的上下文越来越长。以 <code>200+100-80*100/20</code> 为例。</p>
+    <div class="timeline">
+      <div class="round">
+        <div class="round-label">起点</div>
+        <div class="chips">
+          <span class="chip human">HumanMessage("200+100-80*100/20")</span>
+          <span class="note">只有一句话，模型还没有任何工具结果。</span>
+        </div>
+      </div>
+
+      <div class="round">
+        <div class="round-label">第 1 轮</div>
+        <div class="chips">
+          <span class="chip ai">AIMessage：tool_calls = [add, multiply]</span>
+          <span class="arrow-sm">→</span>
+          <span class="chip tool">ToolMessage(add → 300)</span>
+          <span class="chip tool">ToolMessage(multiply → 8000)</span>
+          <span class="note">模型先说"我要调这两个"，工具再把结果补齐。顺序必须保持：先 AIMessage，再 ToolMessage。</span>
+        </div>
+      </div>
+
+      <div class="round">
+        <div class="round-label">第 2 轮</div>
+        <div class="chips">
+          <span class="chip ai">AIMessage：tool_calls = [divide]</span>
+          <span class="arrow-sm">→</span>
+          <span class="chip tool">ToolMessage(divide → 400)</span>
+          <span class="note">模型发现还差一步除法。</span>
+        </div>
+      </div>
+
+      <div class="round">
+        <div class="round-label">第 3 轮</div>
+        <div class="chips">
+          <span class="chip final">AIMessage：content = "-100"，tool_calls = []</span>
+          <span class="note">没有工具要调了 → break → 这个 AIMessage 就是 agent.invoke() 的返回值。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2><span class="idx">4</span>最关键的一条规则：AIMessage 必须跟着回去</h2>
+    <p class="hint">把 <code>addMessages</code> 那一行写错，整个循环就会断。</p>
+    <div class="compare">
+      <div class="box bad">
+        <div class="title">错误：只传工具结果</div>
+        <ul>
+          <li>历史里只有一条孤立的 <code>ToolMessage</code></li>
+          <li>模型看不到"自己刚才要求调什么"</li>
+          <li><code>tool_call_id</code> 找不到对应的调用</li>
+          <li>API 直接报错："must be a response to a preceding message"</li>
+        </ul>
+      </div>
+      <div class="box good">
+        <div class="title">正确：AIMessage + ToolMessage 一起传</div>
+        <ul>
+          <li><code>addMessages(messages, [modalResponse, ...toolResults])</code></li>
+          <li>调用意图（AIMessage）与执行结果（ToolMessage）成对出现</li>
+          <li>每个 <code>tool_call_id</code> 都能被模型对上号</li>
+          <li>模型才能基于结果继续推理</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

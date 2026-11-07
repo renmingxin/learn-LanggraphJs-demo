@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 客服意图路由 · 流程图解</title>
+<style>
+  :root {
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --blue: #2563eb;
+    --green: #059669;
+    --red: #dc2626;
+    --amber: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  header { margin-bottom: 26px; }
+  h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: .3px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0; }
+  section {
+    background: var(--card);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 22px 26px 26px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  h2 {
+    font-size: 17px;
+    margin: 0 0 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .idx {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 7px;
+    background: var(--blue); color: #fff;
+    font-size: 12px; font-weight: 600; flex: none;
+  }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 18px 34px; }
+
+  .state-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 700px) { .state-grid { grid-template-columns: 1fr; } }
+  .state {
+    border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #f8fafc;
+  }
+  .state .key { font-family: Consolas, monospace; font-size: 14px; font-weight: 700; color: var(--blue); }
+  .state .type { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .state .desc { font-size: 13px; color: #334155; margin-top: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #eef2f7; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; background: #f8fafc; }
+  td code { font-family: Consolas, monospace; font-size: 12px; }
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 12px; font-family: Consolas, monospace;
+  }
+  .p-presale { background: #dbeafe; color: #1e40af; }
+  .p-aftersale { background: #d1fae5; color: #065f46; }
+  .p-product { background: #fef3c7; color: #92400e; }
+  .p-general { background: #f1f5f9; color: #475569; }
+
+  .demo { display: flex; flex-direction: column; gap: 10px; }
+  .demo-row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+    border: 1px solid #eef2f7; border-radius: 9px; padding: 10px 14px; background: #fcfdff;
+  }
+  .demo-row .q { font-size: 13px; }
+  .demo-row .who { font-size: 12px; color: var(--muted); font-family: Consolas, monospace; }
+
+  .pitfalls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .pit {
+    border-radius: 10px; padding: 13px 15px; font-size: 13px;
+    background: #fef2f2; border: 1px solid #fecaca;
+  }
+  .pit .t { font-weight: 700; color: var(--red); margin-bottom: 6px; font-size: 13px; }
+  .pit p { margin: 0; color: #334155; }
+
+  .steps { margin: 0; padding-left: 20px; font-size: 13px; }
+  .steps li { margin-bottom: 8px; color: #334155; }
+
+  code {
+    background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 12px;
+  }
+  svg { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>AI 客服：意图识别 + 条件路由</h1>
+    <p class="sub">用户提问 → 判断意图 → 分流到不同客服节点 → 返回统一答复（对应 agent2.ts）</p>
+  </header>
+
+  <!-- 1 -->
+  <section>
+    <h2><span class="idx">1</span>一句话理解这套图</h2>
+    <p class="hint">它就是一个"分诊台"：先由分类器判断问题类型，再按类型把问题交给对应的专科客服。</p>
+    <div class="state-grid">
+      <div class="state">
+        <div class="key">question</div><span class="type">string · 输入</span>
+        <div class="desc">用户原始提问，整个图里唯一由外部传入的字段。</div>
+      </div>
+      <div class="state">
+        <div class="key">intent</div><span class="type">string · 中间结果</span>
+        <div class="desc">分类器产出的标签，同时充当条件边的分支 key。</div>
+      </div>
+      <div class="state">
+        <div class="key">answer</div><span class="type">string · 输出</span>
+        <div class="desc">对应节点生成的专业回复，最终随 state 一起返回。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2><span class="idx">2</span>主流程图</h2>
+    <p class="hint">紫色是分类节点，四种颜色代表四条业务分支，灰色出口是所有分支的汇合点。</p>
+
+    <svg viewBox="0 0 960 560" role="img" aria-label="客服意图路由流程图">
+      <defs>
+        <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb" />
+        </marker>
+        <marker id="arw-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#94a3b8" />
+        </marker>
+      </defs>
+
+      <!-- start -->
+      <rect x="390" y="18" width="180" height="44" rx="22" fill="#e2e8f0" stroke="#cbd5e1" />
+      <text x="480" y="45" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">__start__</text>
+      <line x1="480" y1="62" x2="480" y2="90" stroke="#2563eb" stroke-width="2" marker-end="url(#arw)" />
+
+      <!-- classify -->
+      <rect x="310" y="92" width="340" height="66" rx="10" fill="#ede9fe" stroke="#c4b5fd" />
+      <text x="480" y="117" text-anchor="middle" font-size="14" font-weight="700" fill="#4c1d95">classifyIntent</text>
+      <text x="480" y="137" text-anchor="middle" font-size="11" fill="#6d28d9">调模型 → 只输出 presale / aftersale / product / general</text>
+
+      <line x1="480" y1="158" x2="480" y2="186" stroke="#2563eb" stroke-width="2" marker-end="url(#arw)" />
+
+      <!-- router -->
+      <rect x="330" y="188" width="300" height="52" rx="10" fill="#fff7ed" stroke="#fdba74" />
+      <text x="480" y="211" text-anchor="middle" font-size="13" font-weight="700" fill="#9a3412">routeByIntent（条件边判断）</text>
+      <text x="480" y="229" text-anchor="middle" font-size="11" fill="#c2410c">直接返回 state.intent</text>
+
+      <!-- 四条分支箭头 -->
+      <path d="M480,240 C480,285 135,270 135,318" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+      <path d="M480,240 C480,285 352,270 352,318" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+      <path d="M480,240 C480,285 569,270 569,318" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+      <path d="M480,240 C480,285 786,270 786,318" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+
+      <!-- 分支节点 -->
+      <rect x="45" y="320" width="180" height="98" rx="10" fill="#dbeafe" stroke="#93c5fd" />
+      <text x="135" y="347" text-anchor="middle" font-size="14" font-weight="700" fill="#1e40af">presale</text>
+      <text x="135" y="366" text-anchor="middle" font-size="11" font-family="Consolas" fill="#1e40af">handlePreSale</text>
+      <text x="135" y="388" text-anchor="middle" font-size="11" fill="#1e3a8a">售前客服 · 热情</text>
+      <text x="135" y="405" text-anchor="middle" font-size="11" fill="#1e3a8a">讲价格优惠、引导下单</text>
+
+      <rect x="262" y="320" width="180" height="98" rx="10" fill="#d1fae5" stroke="#6ee7b7" />
+      <text x="352" y="347" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">aftersale</text>
+      <text x="352" y="366" text-anchor="middle" font-size="11" font-family="Consolas" fill="#065f46">handleAfterSale</text>
+      <text x="352" y="388" text-anchor="middle" font-size="11" fill="#064e3b">售后客服 · 耐心</text>
+      <text x="352" y="405" text-anchor="middle" font-size="11" fill="#064e3b">退换货、物流、发票</text>
+
+      <rect x="479" y="320" width="180" height="98" rx="10" fill="#fef3c7" stroke="#fde68a" />
+      <text x="569" y="347" text-anchor="middle" font-size="14" font-weight="700" fill="#92400e">product</text>
+      <text x="569" y="366" text-anchor="middle" font-size="11" font-family="Consolas" fill="#92400e">handleProduct</text>
+      <text x="569" y="388" text-anchor="middle" font-size="11" fill="#78350f">产品顾问 · 专业</text>
+      <text x="569" y="405" text-anchor="middle" font-size="11" fill="#78350f">参数、功能、选型建议</text>
+
+      <rect x="696" y="320" width="180" height="98" rx="10" fill="#f1f5f9" stroke="#cbd5e1" />
+      <text x="786" y="347" text-anchor="middle" font-size="14" font-weight="700" fill="#475569">general</text>
+      <text x="786" y="366" text-anchor="middle" font-size="11" font-family="Consolas" fill="#475569">handleGeneral</text>
+      <text x="786" y="388" text-anchor="middle" font-size="11" fill="#334155">通用客服 · 兜底</text>
+      <text x="786" y="405" text-anchor="middle" font-size="11" fill="#334155">说明服务范围或转人工</text>
+
+      <!-- 汇合 -->
+      <line x1="135" y1="418" x2="135" y2="462" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+      <line x1="352" y1="418" x2="352" y2="462" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+      <line x1="569" y1="418" x2="569" y2="462" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+      <line x1="786" y1="418" x2="786" y2="462" stroke="#94a3b8" stroke-width="2" marker-end="url(#arw-gray)" />
+
+      <rect x="45" y="464" width="831" height="52" rx="10" fill="#e2e8f0" stroke="#cbd5e1" />
+      <text x="460" y="488" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">__end__</text>
+      <text x="460" y="505" text-anchor="middle" font-size="11" fill="#64748b">返回最终 state：{ question, intent, answer }</text>
+
+      <text x="30" y="548" font-size="12" fill="#94a3b8">同一时刻只会走一条分支，四条分支互不干扰。</text>
+    </svg>
+
+    <div class="legend">
+      <span><i class="dot" style="background:#ede9fe;border:1px solid #c4b5fd"></i>分类节点</span>
+      <span><i class="dot" style="background:#dbeafe;border:1px solid #93c5fd"></i>售前</span>
+      <span><i class="dot" style="background:#d1fae5;border:1px solid #6ee7b7"></i>售后</span>
+      <span><i class="dot" style="background:#fef3c7;border:1px solid #fde68a"></i>产品咨询</span>
+      <span><i class="dot" style="background:#f1f5f9;border:1px solid #cbd5e1"></i>兜底</span>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2><span class="idx">3</span>代码与图的对应关系</h2>
+    <p class="hint">图上的每一块都能在 agent2.ts 里找到对应代码。</p>
+    <table>
+      <thead>
+        <tr><th>图上的元素</th><th>代码位置</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>classifyIntent</code></td>
+          <td><code>classifyIntent()</code></td>
+          <td>让模型只输出一个标签，再用 <code>includes</code> 做兜底归一化</td>
+        </tr>
+        <tr>
+          <td>路由判断</td>
+          <td><code>routeByIntent</code></td>
+          <td>原样返回 <code>state.intent</code>，充当条件边的返回值</td>
+        </tr>
+        <tr>
+          <td>四路分支</td>
+          <td><code>addConditionalEdges</code></td>
+          <td>映射表把标签翻译成节点名，key 必须与返回值一致</td>
+        </tr>
+        <tr>
+          <td>四个处理节点</td>
+          <td><code>handlePreSale / handleAfterSale / handleProduct / handleGeneral</code></td>
+          <td>每个节点只改 <code>answer</code>，互不重叠</td>
+        </tr>
+        <tr>
+          <td>出口</td>
+          <td><code>addEdge('handleXxx', '__end__')</code></td>
+          <td>四条边分别指向结束，任一分支都能正常收尾</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2><span class="idx">4</span>路由映射表</h2>
+    <p class="hint">条件边的映射表就是"分诊单"，左边是分类结果，右边是接诊的节点。</p>
+    <table>
+      <thead>
+        <tr><th>intent（分支 key）</th><th>交给谁</th><th>这个节点的人设</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="pill p-presale">presale</span></td>
+          <td><code>handlePreSale</code></td>
+          <td>热情促成，讲价格优惠，不编造活动</td>
+        </tr>
+        <tr>
+          <td><span class="pill p-aftersale">aftersale</span></td>
+          <td><code>handleAfterSale</code></td>
+          <td>先安抚，再给退换货 / 物流 / 发票步骤</td>
+        </tr>
+        <tr>
+          <td><span class="pill p-product">product</span></td>
+          <td><code>handleProduct</code></td>
+          <td>客观专业，讲参数与选型，不确定就说以官方为准</td>
+        </tr>
+        <tr>
+          <td><span class="pill p-general">general</span></td>
+          <td><code>handleGeneral</code></td>
+          <td>兜底：说明服务范围，或提示转接人工</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <h2><span class="idx">5</span>四句话跑出四条路径</h2>
+    <p class="hint">改 <code>invoke()</code> 里的 question，就能验证每条分支是否接通。</p>
+    <div class="demo">
+      <div class="demo-row">
+        <div class="q">"你们这个套餐现在有优惠吗？我准备下单"</div>
+        <span class="pill p-presale">presale</span>
+        <span class="who">→ handlePreSale</span>
+      </div>
+      <div class="demo-row">
+        <div class="q">"收到的商品坏了，怎么申请退货？"</div>
+        <span class="pill p-aftersale">aftersale</span>
+        <span class="who">→ handleAfterSale</span>
+      </div>
+      <div class="demo-row">
+        <div class="q">"这款和另一款有什么区别，怎么选？"</div>
+        <span class="pill p-product">product</span>
+        <span class="who">→ handleProduct</span>
+      </div>
+      <div class="demo-row">
+        <div class="q">"今天天气怎么样？"</div>
+        <span class="pill p-general">general</span>
+        <span class="who">→ handleGeneral</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <h2><span class="idx">6</span>三个必须记住的坑</h2>
+    <p class="hint">这三个问题都不会在写完代码时立刻暴露，但会在运行时把你卡住。</p>
+    <div class="pitfalls">
+      <div class="pit">
+        <div class="t">1. 节点名不能等于状态字段名</div>
+        <p>状态里有 <code>answer</code>，就不能再注册叫 <code>answer</code> 的节点，<code>compile()</code> 会直接抛 "already being used as a state attribute"。</p>
+      </div>
+      <div class="pit">
+        <div class="t">2. 分支 key 必须与返回值完全一致</div>
+        <p>路由函数返回 <code>presale</code>，映射表里也必须是 <code>presale</code>。写成"售前"或 <code>preSale</code> 都找不到分支，运行时报错。</p>
+      </div>
+      <div class="pit">
+        <div class="t">3. 分类结果要做归一化</div>
+        <p>模型可能输出 "presale 标签" 甚至一整句解释。直接拿去当 key 会路由失败，所以代码里用 <code>includes</code> 匹配后再兜底成 <code>general</code>。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <h2><span class="idx">7</span>想再加一类意图，改四处</h2>
+    <p class="hint">以"投诉建议"为例，套路永远是这四步。</p>
+    <ol class="steps">
+      <li>在 <code>INTENTS</code> 里加一个 key，例如 <code>complaint: '投诉建议'</code>，并把它写进分类提示词。</li>
+      <li>写一个处理节点 <code>handleComplaint</code>，返回 <code>{ answer: ... }</code>。</li>
+      <li>在 <code>addConditionalEdges</code> 的映射表里加 <code>complaint: 'handleComplaint'</code>。</li>
+      <li>注册节点 <code>addNode('handleComplaint', handleComplaint)</code>，并加一条 <code>addEdge('handleComplaint', '__end__')</code>。</li>
+    </ol>
+  </section>
+
+</div>
+</body>
+</html>

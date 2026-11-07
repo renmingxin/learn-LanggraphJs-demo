@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>子图流程图解 · sub-graph</title>
+<style>
+  :root {
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --blue: #2563eb;
+    --green: #059669;
+    --red: #dc2626;
+    --violet: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  header { margin-bottom: 26px; }
+  h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: .3px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0; }
+  section {
+    background: var(--card);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 22px 26px 26px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  h2 { font-size: 17px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  h2 .idx {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 7px;
+    background: var(--blue); color: #fff;
+    font-size: 12px; font-weight: 600; flex: none;
+  }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 18px 34px; }
+
+  .state-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 700px) { .state-grid { grid-template-columns: 1fr; } }
+  .state { border: 1px solid #e2e8f0; border-radius: 10px; padding: 13px 15px; background: #f8fafc; }
+  .state .key { font-family: Consolas, monospace; font-size: 14px; font-weight: 700; color: var(--blue); }
+  .state .desc { font-size: 12px; color: #334155; margin-top: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #eef2f7; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; background: #f8fafc; }
+  td code { font-family: Consolas, monospace; font-size: 12px; }
+
+  .flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
+  .flow .box { flex: 1 1 180px; border: 1px solid #dbeafe; background: #eff6ff; border-radius: 9px; padding: 10px 12px; }
+  .flow .box b { display: block; color: #1e40af; font-size: 13px; margin-bottom: 3px; }
+
+  .logs {
+    background: #0f172a; color: #cbd5e1; border-radius: 10px; padding: 16px 18px;
+    font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.9; overflow-x: auto;
+  }
+  .logs .ok { color: #6ee7b7; }
+  .logs .dim { color: #94a3b8; }
+
+  .pitfalls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .pit { border-radius: 10px; padding: 13px 15px; font-size: 13px; background: #fef2f2; border: 1px solid #fecaca; }
+  .pit .t { font-weight: 700; color: var(--red); margin-bottom: 6px; }
+  .pit p { margin: 0; color: #334155; }
+
+  .improve { border-radius: 10px; padding: 13px 15px; font-size: 13px; background: #ecfdf5; border: 1px solid #a7f3d0; margin-bottom: 10px; }
+  .improve b { color: var(--green); }
+
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; }
+  svg { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>子图（Sub Graph）：把一张图当成一个节点</h1>
+    <p class="sub">主图抓百度 → 子图1 抓 hao123 → 子图2 抓淘宝 → 主图模型分析。对应 5.sub-graph/agent.ts</p>
+  </header>
+
+  <!-- 1 -->
+  <section>
+    <h2><span class="idx">1</span>三张图、同一套状态定义</h2>
+    <p class="hint">父图和两个子图都复用了同一个 <code>StateAnnotation</code>，但运行时的状态是各自独立的副本。</p>
+    <div class="state-grid">
+      <div class="state"><div class="key">url</div><div class="desc">要抓取的地址，三个图各传各的</div></div>
+      <div class="state"><div class="key">times</div><div class="desc">抓取次数计数</div></div>
+      <div class="state"><div class="key">text</div><div class="desc">抓到的网页 HTML</div></div>
+    </div>
+    <div class="flow" style="margin-top:16px;">
+      <div class="box">
+        <b>父图状态</b>url = baidu.com<br>text = 百度页面<br>times = 1
+      </div>
+      <div class="box" style="background:#f5f3ff;border-color:#c4b5fd;">
+        <b style="color:#5b21b6">子图1 状态（独立副本）</b>url = hao123.com<br>text = 好123页面<br>times = 1
+      </div>
+      <div class="box" style="background:#f5f3ff;border-color:#c4b5fd;">
+        <b style="color:#5b21b6">子图2 状态（独立副本）</b>url = taobao.com<br>text = 淘宝页面<br>times = 1
+      </div>
+    </div>
+    <p class="hint" style="margin:14px 0 0 0;">
+      关键：子图内部的 <code>text</code> 不会自动写回父图。当前代码里子图节点只 <code>return {}</code>，所以父图始终只持有百度那份内容。
+    </p>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2><span class="idx">2</span>主流程图</h2>
+    <p class="hint">紫色虚线框是子图，它内部又是完整的一条 <code>fetchToolNode → modalNode</code> 链。注意三个图都有同名节点，但命名空间互不干扰。</p>
+
+    <svg viewBox="0 0 960 556" role="img" aria-label="子图嵌套流程图">
+      <defs>
+        <marker id="a-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb" />
+        </marker>
+        <marker id="a-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed" />
+        </marker>
+      </defs>
+
+      <!-- start -->
+      <rect x="390" y="12" width="180" height="42" rx="21" fill="#e2e8f0" stroke="#cbd5e1" />
+      <text x="480" y="38" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">__start__</text>
+      <line x1="480" y1="54" x2="480" y2="78" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- 主图 fetch -->
+      <rect x="320" y="80" width="320" height="58" rx="10" fill="#dbeafe" stroke="#93c5fd" />
+      <text x="480" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#1e40af">fetchToolNode（主图）</text>
+      <text x="480" y="124" text-anchor="middle" font-size="11" fill="#1e3a8a">抓取 baidu.com → 写入父图 text</text>
+      <line x1="480" y1="138" x2="480" y2="168" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- 子图1 容器 -->
+      <rect x="170" y="170" width="620" height="92" rx="12" fill="#f5f3ff" stroke="#c4b5fd" stroke-dasharray="7 5" />
+      <text x="188" y="189" font-size="12" font-weight="700" fill="#5b21b6">subAgent1（子图节点）</text>
+      <text x="772" y="189" text-anchor="end" font-size="11" fill="#7c3aed">invoke({ times: 0, url: hao123 })</text>
+
+      <rect x="200" y="200" width="200" height="52" rx="8" fill="#ede9fe" stroke="#a78bfa" />
+      <text x="300" y="222" text-anchor="middle" font-size="12" font-weight="700" fill="#4c1d95">fetchToolNode</text>
+      <text x="300" y="240" text-anchor="middle" font-size="11" fill="#6d28d9">抓取 hao123.com</text>
+
+      <line x1="400" y1="226" x2="456" y2="226" stroke="#7c3aed" stroke-width="2" marker-end="url(#a-violet)" />
+
+      <rect x="458" y="200" width="200" height="52" rx="8" fill="#ede9fe" stroke="#a78bfa" />
+      <text x="558" y="222" text-anchor="middle" font-size="12" font-weight="700" fill="#4c1d95">modalNode</text>
+      <text x="558" y="240" text-anchor="middle" font-size="11" fill="#6d28d9">分析子图自己的 text</text>
+
+      <line x1="480" y1="262" x2="480" y2="284" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- 子图2 容器 -->
+      <rect x="170" y="286" width="620" height="92" rx="12" fill="#f5f3ff" stroke="#c4b5fd" stroke-dasharray="7 5" />
+      <text x="188" y="305" font-size="12" font-weight="700" fill="#5b21b6">subAgent2（子图节点）</text>
+      <text x="772" y="305" text-anchor="end" font-size="11" fill="#7c3aed">invoke({ times: 0, url: taobao })</text>
+
+      <rect x="200" y="316" width="200" height="52" rx="8" fill="#ede9fe" stroke="#a78bfa" />
+      <text x="300" y="338" text-anchor="middle" font-size="12" font-weight="700" fill="#4c1d95">fetchToolNode</text>
+      <text x="300" y="356" text-anchor="middle" font-size="11" fill="#6d28d9">抓取 taobao.com</text>
+
+      <line x1="400" y1="342" x2="456" y2="342" stroke="#7c3aed" stroke-width="2" marker-end="url(#a-violet)" />
+
+      <rect x="458" y="316" width="200" height="52" rx="8" fill="#ede9fe" stroke="#a78bfa" />
+      <text x="558" y="338" text-anchor="middle" font-size="12" font-weight="700" fill="#4c1d95">modalNode</text>
+      <text x="558" y="356" text-anchor="middle" font-size="11" fill="#6d28d9">分析子图自己的 text</text>
+
+      <line x1="480" y1="378" x2="480" y2="402" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+
+      <!-- 主图 modal -->
+      <rect x="300" y="404" width="360" height="58" rx="10" fill="#d1fae5" stroke="#6ee7b7" />
+      <text x="480" y="428" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">modalNode（主图）</text>
+      <text x="480" y="448" text-anchor="middle" font-size="11" fill="#047857">只分析父图 text —— 也就是百度那份内容</text>
+
+      <line x1="480" y1="462" x2="480" y2="486" stroke="#2563eb" stroke-width="2" marker-end="url(#a-blue)" />
+      <rect x="390" y="488" width="180" height="42" rx="21" fill="#e2e8f0" stroke="#cbd5e1" />
+      <text x="480" y="514" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">__end__</text>
+
+      <text x="30" y="548" font-size="12" fill="#94a3b8">子图内部再走一遍完整的两节点链路，状态与父图隔离，输出也不会自动合并。</text>
+    </svg>
+
+    <div class="legend">
+      <span><i class="dot" style="background:#dbeafe;border:1px solid #93c5fd"></i>父图节点</span>
+      <span><i class="dot" style="background:#ede9fe;border:1px solid #a78bfa"></i>子图内部节点</span>
+      <span><i class="dot" style="background:#d1fae5;border:1px solid #6ee7b7"></i>最终分析</span>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2><span class="idx">3</span>实际执行顺序</h2>
+    <p class="hint">四次网络动作，注意最后一步分析的不是刚抓的两个页面。</p>
+    <table>
+      <thead><tr><th>步骤</th><th>执行者</th><th>抓取地址</th><th>产出 / 说明</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>主图 <code>fetchToolNode</code></td><td>baidu.com</td><td>写入父图 <code>text</code>，<code>times</code> 变 1</td></tr>
+        <tr><td>2</td><td>子图1 <code>fetchToolNode</code> → <code>modalNode</code></td><td>hao123.com</td><td>子图内部抓取并分析，结果只在 <code>subGraphOutput1</code> 日志里</td></tr>
+        <tr><td>3</td><td>子图2 <code>fetchToolNode</code> → <code>modalNode</code></td><td>taobao.com</td><td>同上，结果只在 <code>subGraphOutput2</code> 日志里</td></tr>
+        <tr><td>4</td><td>主图 <code>modalNode</code></td><td>—</td><td><b>分析父图的 text（百度）</b>，与两个子图无关</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2><span class="idx">4</span>子图的两种挂载方式</h2>
+    <p class="hint">当前代码用的是第一种，灵活但要自己处理状态传递。</p>
+    <table>
+      <thead><tr><th></th><th>手动在节点里 <code>invoke()</code>（当前写法）</th><th>直接把编译后的图 <code>addNode()</code></th></tr></thead>
+      <tbody>
+        <tr><td>写法</td><td><code>addNode('subAgent1', async () => { await subAgent1.invoke({...}) })</code></td><td><code>addNode('subAgent1', subAgent1)</code></td></tr>
+        <tr><td>状态</td><td>完全隔离，入参自己写，输出自己决定是否回传</td><td>父图状态自动流入，子图输出自动合并回父图</td></tr>
+        <tr><td>前提</td><td>无，任何状态结构都行</td><td>父子状态 schema 要兼容</td></tr>
+        <tr><td>适合</td><td>子图需要不同入参、只想拿部分结果、做实验</td><td>稳定的模块复用</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <h2><span class="idx">5</span>代码与图的对应关系</h2>
+    <table>
+      <thead><tr><th>图上的元素</th><th>代码</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>子图1 / 子图2</td><td><code>new StateGraph(StateAnnotation)...compile()</code></td><td>两张独立编译的小图，结构完全一样，只有 URL 不同</td></tr>
+        <tr><td>子图容器节点</td><td><code>addNode('subAgent1', async () => {...})</code></td><td>包装节点里调用 <code>subAgent1.invoke()</code>，打印结果后 <code>return {}</code></td></tr>
+        <tr><td>主图抓取</td><td><code>fetchToolNode</code></td><td>和子图共用同一个节点函数</td></tr>
+        <tr><td>最终分析</td><td><code>modalNode</code></td><td>读父图 <code>text</code>，调模型输出简短分析</td></tr>
+        <tr><td>store</td><td><code>compile({ store })</code></td><td>当前没有节点读写它，属于预留</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <h2><span class="idx">6</span>日志里会看到三次 modalNode</h2>
+    <p class="hint">别误以为是同一节点跑了三次——其中两次来自子图，一次来自主图。</p>
+    <div class="logs">
+      <div><span class="dim">subGraphOutput1</span> { times: 1, url: 'hao123', text: '&lt;html…&gt;' }</div>
+      <div><span class="dim">modalNode</span> 好123 是一个导航站……<span class="dim">（子图1 内部）</span></div>
+      <div><span class="dim">subGraphOutput2</span> { times: 1, url: 'taobao', text: '&lt;html…&gt;' }</div>
+      <div><span class="dim">modalNode</span> 淘宝首页以商品推荐为主……<span class="dim">（子图2 内部）</span></div>
+      <div><span class="ok">modalNode</span> 百度首页包含搜索框与资讯……<span class="dim">（主图，最后执行）</span></div>
+    </div>
+    <p class="hint" style="margin-top:14px;margin-bottom:0;">
+      输出顺序通常就是：子图1 的两条 → 子图2 的两条 → 主图的最后一条。因为三个图是串行串起来的。
+    </p>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <h2><span class="idx">7</span>四个要注意的点</h2>
+    <div class="pitfalls">
+      <div class="pit">
+        <div class="t">1. 子图结果被丢掉了</div>
+        <p>两个包装节点都 <code>return {}</code>，子图抓到的正文和分析结论没有写回父图，父图状态里永远只有百度的内容。想让结果参与后续，必须 <code>return { text: ... }</code> 或新增字段。</p>
+      </div>
+      <div class="pit">
+        <div class="t">2. 最后分析的对象不是你以为的那个</div>
+        <p>主图 <code>modalNode</code> 读的是 <code>state.text</code>，即百度页面。前面两次子图抓取对它没有影响。</p>
+      </div>
+      <div class="pit">
+        <div class="t">3. 两个子图是完全重复的代码</div>
+        <p>只差一个 URL。更好的做法是做一个参数化的子图，或直接在包装节点里把 URL 从状态传进去，减少重复。</p>
+      </div>
+      <div class="pit">
+        <div class="t">4. <code>store as unknown as BaseStore</code> 是权宜写法</div>
+        <p><code>InMemoryStore</code> 在这个版本里应从 <code>@langchain/langgraph</code> 导入，从 <code>langchain</code> 导入会导致类型不匹配，才需要强制断言。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section>
+    <h2><span class="idx">8</span>三个自然的改进方向</h2>
+    <div class="improve">
+      <b>方向一：把子图结果回传父图</b> —— 父图状态加一个 <code>subReports: Annotation&lt;string[]&gt;</code>，包装节点 <code>return { subReports: [...] }</code>，最终 <code>modalNode</code> 就能同时参考三份内容。
+    </div>
+    <div class="improve">
+      <b>方向二：让两个子图并行</b> —— 把边改成 <code>__start__ → subAgent1</code> 和 <code>__start__ → subAgent2</code> 同时出发，再都指向 <code>modalNode</code>；多入边会等全部完成，与第 3 节的并行流一致。
+    </div>
+    <div class="improve">
+      <b>方向三：让子图接受外部 URL</b> —— 不再在包装节点里写死 hao123/taobao，而是从父状态读出 <code>url</code> 列表，循环或映射成多个子图调用，子图才真正可复用。
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
